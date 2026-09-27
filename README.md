@@ -1,0 +1,1 @@
+# This initiative is focused on developing a RAG system for cientific documentation of different types.
