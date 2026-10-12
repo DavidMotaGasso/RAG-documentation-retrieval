@@ -163,11 +163,13 @@ baseline evals show whether it's worth the added cost.
 - Keep this file current: when a decision is made or changed, update the
   relevant section here (it reflects the *current* state; the history and
   rationale go in the learning guide).
-- The project owner keeps a personal **PDF learning guide** in `guide/`
-  (gitignored, not part of the project): source `guide/rag_learning_guide.md`,
-  built with `python guide/build_guide.py` into `guide/RAG_Learning_Guide.pdf`.
-  At the end of every phase, update it with what was built, the decisions with
-  their alternatives, and the lessons learned, then rebuild the PDF. It is a
-  learning project, so the "why" matters as much as the "what"; write it as a
-  reading, not a log.
+- The project owner keeps two personal **PDF guides** in `guide/` (gitignored,
+  not part of the project), both built with `python guide/build_guide.py`:
+  - `rag_learning_guide.md` → `RAG_Learning_Guide.pdf`: at the end of every
+    phase, add what was built, the decisions with their alternatives, and the
+    lessons learned. It is a learning project, so the "why" matters as much as
+    the "what"; write it as a reading, not a log.
+  - `project_structure.md` → `Project_Structure.pdf`: what every folder/file
+    does and how data flows. Update it whenever files or folders are added,
+    removed or change purpose.
 - Discussion/planning with the project owner happens in Catalan.
