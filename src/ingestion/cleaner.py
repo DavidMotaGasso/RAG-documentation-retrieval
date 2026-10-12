@@ -172,21 +172,28 @@ def remove_headers_footers(blocks: list[dict]) -> tuple[list[dict], int]:
 # ------------------------------------------------ 2-3. text normalization ---
 
 def normalize_chars(text: str) -> tuple[str, int]:
-    """Return normalized text and the number of soft hyphens removed."""
+    """Return normalized text and the number of soft hyphens found.
+
+    Soft hyphens are kept here and removed by remove_soft_hyphens() once lines
+    are joined: a soft hyphen ending a line means the word continues on the next
+    line, which is only visible after the join.
+    """
     text = text.translate(SPACE_LIKE).translate(DROP_CHARS)
     for lig, repl in LIGATURES.items():
         text = text.replace(lig, repl)
-    soft = text.count("\u00ad")
-    text = text.replace("\u00ad\n", "").replace("\u00ad", "")
     text = re.sub(r"[\x00-\x09\x0b-\x1f]", "", text)
-    return text, soft
+    return text, text.count("\u00ad")
+
+
+def remove_soft_hyphens(text: str) -> str:
+    return text.replace("\u00ad\n", "").replace("\u00ad", "")
 
 
 def build_vocabulary(texts: list[str]) -> tuple[set[str], set[str]]:
     """Lower-cased words and hyphenated compounds seen *outside* line breaks."""
     words, compounds = set(), set()
     for text in texts:
-        for token in WORD_RE.findall(LINE_HYPHEN_RE.sub(" ", text)):
+        for token in WORD_RE.findall(LINE_HYPHEN_RE.sub(" ", remove_soft_hyphens(text))):
             token = token.lower().replace("\u2010", "-")
             (compounds if "-" in token else words).add(token)
     return words, compounds
@@ -211,7 +218,7 @@ class Dehyphenator:
         return f"{left}-{right}" if decision.startswith("kept") else f"{left}{right}"
 
     def __call__(self, text: str) -> str:
-        return LINE_HYPHEN_RE.sub(self._replace, text)
+        return LINE_HYPHEN_RE.sub(self._replace, remove_soft_hyphens(text))
 
 
 def flatten(text: str) -> str:
