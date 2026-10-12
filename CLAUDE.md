@@ -80,9 +80,14 @@ No sub-domains or extra per-document tags (task/modality) for now.
   bge's query instruction is **off** by default (equal or slightly worse in the
   Phase 1.5 check; re-test in Phase 4). Document cards stay in
   `data/processed/document_cards.json` (no vectors; 12 cards are read whole).
-- **LLM model**: start with `claude-haiku-4-5` for cost efficiency (same choice
-  made in `football-predictor`). Reassess if answer quality is insufficient
-  during evals — possibly upgrade only the final-generation step.
+- **LLM model**: `claude-haiku-5-5` for both the naive baseline and the agent
+  (same model on both sides keeps the Phase 4 comparison fair). Switched from
+  `claude-haiku-4-5` in Phase 2: ~10x cheaper per token ($0.10 / $0.50 per MTok
+  for prompts up to 100K), though its tokenizer counts the same text as ~30-45%
+  more tokens. It thinks by default; we run it at `effort: low` and leave
+  `max_tokens` room for thinking. Reassess if answer quality is insufficient
+  during evals — possibly upgrade only the final-generation step. (The
+  document cards were generated earlier with Haiku 4.5 and were not redone.)
 - **Ground truth for evals**: no existing Q&A pairs; will be generated
   synthetically from the corpus itself (via LLM) rather than hand-labeled.
 - **Efficiency strategy**: the agent should route queries to a domain-filtered
@@ -118,6 +123,8 @@ rag-practice/
 │   │   ├── embeddings.py         # bge-small wrapper (documents vs. queries, normalized)
 │   │   ├── vector_store.py       # Chroma: build index, search with filters, get_context
 │   │   └── retrieval_check.py    # Phase 1.5 sanity check on 20 hand-labeled queries
+│   ├── baseline/
+│   │   └── naive_rag.py          # Phase 2: global top-5 search + one Haiku call
 │   ├── agent/
 │   │   ├── tools.py              # tool definitions for the Claude Agent SDK
 │   │   └── agent.py              # agent setup, system prompt
@@ -165,6 +172,17 @@ Notes from Phase 1 (retrieval check, `src/indexing/retrieval_check.py`):
   questions, a risk for multi-paper ones.
 - `VectorStore.search` / `get_context` are the building blocks for
   `search_by_domain`, `search_global` and `get_chunk_context`.
+
+Naive baseline (Phase 2, `src/baseline/naive_rag.py`): the raw question is
+embedded as-is (no rewriting, no translation, no domain filter), top-5 chunks
+from the whole corpus go to one `claude-haiku-5-5` call as numbered excerpts.
+It is not a straw man: same index, same model and the same "say it is not
+covered" instruction the agent will have, so Phase 4 isolates the retrieval
+strategy. It returns a `RAGAnswer` (answer, retrieved chunks, tokens, cost,
+latency) — the agent must return the same fields. First trial (5 questions,
+~$0.0004 and ~2.5k input tokens each with Haiku 5.5): out-of-corpus correctly
+refused; a Catalan question retrieved mostly the wrong paper (no translation);
+a multi-paper question retrieved 3 papers but the answer only confirmed 2.
 
 No reranking tool in this first version — revisit in the improvement phase once
 baseline evals show whether it's worth the added cost.
