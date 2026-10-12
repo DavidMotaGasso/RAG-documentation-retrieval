@@ -2,6 +2,8 @@
 pymupdf>=1.28
 pymupdf4llm>=1.28  # reference only, used by src/ingestion/compare_extraction.py
 
+anthropic>=1.13       # document cards (src/ingestion/document_cards.py)
+
 # Phase 1 - Indexing
 sentence-transformers>=6.1
 chromadb>=1.5
