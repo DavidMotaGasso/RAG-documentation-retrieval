@@ -1,5 +1,6 @@
 # Phase 0 - Data prep
 pymupdf>=1.28
+pymupdf4llm>=1.28  # reference only, used by src/ingestion/compare_extraction.py
 
 # Phase 1 - Indexing
 sentence-transformers>=6.1
