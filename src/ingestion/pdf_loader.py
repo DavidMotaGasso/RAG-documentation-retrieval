@@ -59,28 +59,51 @@ def _line_text(line: dict) -> str:
     return "".join(out)
 
 
-def _block_text_and_font(block: dict) -> tuple[str, float, bool]:
-    """Join the block's horizontal lines; return text, dominant size and boldness."""
-    lines = []
+def _font_stats(spans: list[dict]) -> tuple[Counter, int, int]:
+    """Character counts per font size, plus bold and total character counts."""
     size_chars: Counter[float] = Counter()
     bold_chars = total_chars = 0
+    for span in spans:
+        n = sum(1 for ch in span["chars"] if not ch["c"].isspace())
+        size_chars[round(span["size"], 1)] += n
+        total_chars += n
+        if span["flags"] & BOLD_FLAG or "bold" in span["font"].lower():
+            bold_chars += n
+    return size_chars, bold_chars, total_chars
+
+
+def _summarize_font(size_chars: Counter, bold_chars: int, total_chars: int) -> tuple[float, bool]:
+    font_size = size_chars.most_common(1)[0][0] if size_chars else 0.0
+    is_bold = total_chars > 0 and bold_chars / total_chars > 0.5
+    return font_size, is_bold
+
+
+def _block_lines(block: dict) -> list[dict]:
+    """Horizontal lines of a block with their own font info.
+
+    Line-level font info matters because section headings are often the first
+    line of a paragraph block rather than a block of their own.
+    """
+    lines = []
     for line in block["lines"]:
         if line["dir"] != (1.0, 0.0):  # rotated text, e.g. the arXiv side stamp
             continue
         line_text = _line_text(line)
         if not line_text.strip():
             continue
-        lines.append(line_text)
-        for span in line["spans"]:
-            n = sum(1 for ch in span["chars"] if not ch["c"].isspace())
-            size_chars[round(span["size"], 1)] += n
-            total_chars += n
-            if span["flags"] & BOLD_FLAG or "bold" in span["font"].lower():
-                bold_chars += n
-    text = "\n".join(lines)
-    font_size = size_chars.most_common(1)[0][0] if size_chars else 0.0
-    is_bold = total_chars > 0 and bold_chars / total_chars > 0.5
-    return text, font_size, is_bold
+        font_size, is_bold = _summarize_font(*_font_stats(line["spans"]))
+        lines.append({"text": line_text, "font_size": font_size, "is_bold": is_bold,
+                      "_spans": line["spans"]})
+    return lines
+
+
+def _block_text_and_font(block: dict) -> tuple[str, float, bool, list[dict]]:
+    """Join the block's lines; return text, dominant size, boldness and the lines."""
+    lines = _block_lines(block)
+    font_size, is_bold = _summarize_font(
+        *_font_stats([span for line in lines for span in line.pop("_spans")]))
+    text = "\n".join(line["text"] for line in lines)
+    return text, font_size, is_bold, lines
 
 
 def _column_of(bbox: tuple[float, float, float, float], page_width: float) -> str:
@@ -127,7 +150,7 @@ def extract_blocks(path: Path, doc_id: str) -> list[dict]:
             for raw in page.get_text("rawdict", flags=EXTRACT_FLAGS)["blocks"]:
                 if raw["type"] != 0:
                     continue
-                text, font_size, is_bold = _block_text_and_font(raw)
+                text, font_size, is_bold, lines = _block_text_and_font(raw)
                 if not text.strip():
                     continue
                 bbox = tuple(round(v, 1) for v in raw["bbox"])
@@ -141,6 +164,7 @@ def extract_blocks(path: Path, doc_id: str) -> list[dict]:
                     "font_size": font_size,
                     "is_bold": is_bold,
                     "text": text,
+                    "lines": lines,
                 })
             for block in _reading_order(page_blocks):
                 block["block_no"] = len(blocks)  # position in the whole document
@@ -172,7 +196,7 @@ def main() -> None:
                 f.write(json.dumps(block, ensure_ascii=False) + "\n")
         write_preview(blocks, PREVIEW_DIR / f"{doc_id}.txt")
 
-        ligatures = sum(ch in "ﬀﬁﬂﬃﬄﬅﬆ"
+        ligatures = sum(ch in "\ufb00\ufb01\ufb02\ufb03\ufb04\ufb05\ufb06"
                         for b in blocks for ch in b["text"])
         columns = Counter(b["column"] for b in blocks)
         print(f"{doc_id}  blocks={len(blocks):<5} ligatures={ligatures:<3} "

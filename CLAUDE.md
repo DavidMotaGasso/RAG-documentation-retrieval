@@ -89,6 +89,7 @@ rag-practice/
 │   │   ├── inventory.py          # corpus manifest -> data/processed/inventory.csv
 │   │   ├── pdf_loader.py         # layout-aware block extraction -> data/processed/blocks/
 │   │   ├── compare_extraction.py # one-off check of pdf_loader vs pymupdf4llm
+│   │   ├── cleaner.py            # header/footer removal, de-hyphenation, sections -> data/processed/clean/
 │   │   ├── chunker.py            # chunking strategy
 │   │   └── domains.py            # domain taxonomy + manual doc -> domain map
 │   ├── indexing/

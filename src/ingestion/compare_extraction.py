@@ -29,8 +29,8 @@ def quality_signals(text: str) -> dict:
     return {
         "words": len(words),
         "glued_words(>=18)": sum(len(w) >= 18 for w in words),
-        "ligatures": len(re.findall("[ﬀ-ﬆ]", text)),
-        "soft_hyphens": text.count("­"),
+        "ligatures": len(re.findall("[\ufb00-\ufb06]", text)),
+        "soft_hyphens": text.count("\u00ad"),
     }
 
 
