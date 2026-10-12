@@ -56,11 +56,21 @@ No sub-domains or extra per-document tags (task/modality) for now.
 - **Vector database**: Chroma (local, persisted to disk). Chosen over FAISS
   because it has native metadata filtering, which is essential for the
   domain-based routing strategy below. FAISS is a possible later exploration.
-- **Embeddings model**: local, via `sentence-transformers` (e.g.
-  `all-MiniLM-L6-v2` or `bge-small-en`). No third-party paid APIs (OpenAI,
-  Voyage) — consistent with the project owner's standing preference to avoid
-  paid/external services and not send data off-machine when a local alternative
-  exists.
+- **Embeddings model**: local, via `sentence-transformers`:
+  **`BAAI/bge-small-en-v1.5`** (512-token limit, 384 dims). Chosen over
+  `all-MiniLM-L6-v2` because MiniLM truncates at 256 tokens (trained on 128),
+  which would leave ~200 tokens per chunk once the contextual header is added.
+  No third-party paid APIs (OpenAI, Voyage) — consistent with the project
+  owner's standing preference to avoid paid/external services and not send data
+  off-machine when a local alternative exists. The corpus is English-only, so
+  the agent must write search queries in English even when the user asks in
+  another language.
+- **Chunking** (decided in Phase 0.6 from `src/ingestion/analyze_corpus.py`):
+  section-aware, **~300 tokens of text** per chunk plus the contextual header
+  (`[Paper: ... | Section: ...]`, 30 tokens median, 58 max). Only `abstract` and
+  `body` sections are indexed (front matter, back matter and references are
+  excluded). Indexable corpus: ~129k tokens -> ~600 chunks. Revisit size (e.g.
+  400) in Phase 5 using evals.
 - **LLM model**: start with `claude-haiku-4-5` for cost efficiency (same choice
   made in `football-predictor`). Reassess if answer quality is insufficient
   during evals — possibly upgrade only the final-generation step.
