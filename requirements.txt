@@ -1,0 +1,12 @@
+# Phase 0 - Data prep
+pymupdf>=1.28
+
+# Phase 1 - Indexing
+sentence-transformers>=6.1
+chromadb>=1.5
+
+# Phase 3 - Agent
+claude-agent-sdk>=0.2
+
+# Utilities
+python-dotenv>=1.0
