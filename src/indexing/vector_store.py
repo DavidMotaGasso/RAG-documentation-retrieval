@@ -52,8 +52,7 @@ class VectorStore:
             COLLECTION_NAME,
             configuration={"hnsw": {"space": "cosine"}},
             embedding_function=None,
-            metadata={"embedding_model": self.embedder.model_name,
-                      "query_instruction": self.embedder.use_query_instruction},
+            metadata={"embedding_model": self.embedder.model_name},
         )
 
         vectors = self.embedder.embed_documents([c["embedding_text"] for c in chunks],
