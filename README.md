@@ -55,3 +55,23 @@ to `preview/` and `clean_preview/`.
 | `overlap_chars` | Length of that overlap prefix (strip it when stitching neighbours) |
 | `embedding_text` | `[Paper: {title} \| Section: {section}]` + `text`: what gets embedded |
 | `n_tokens`, `n_embedding_tokens` | Token counts with the `bge-small-en-v1.5` tokenizer |
+
+## Vector index
+
+```bash
+python -m src.indexing.vector_store      # embed chunks.jsonl and (re)build chroma_db/ (~70 s on CPU)
+python -m src.indexing.retrieval_check   # sanity check on 20 hand-labeled queries
+```
+
+The index is a single Chroma collection (`chunks`) in `chroma_db/` (gitignored),
+using cosine distance and `BAAI/bge-small-en-v1.5` embeddings. Rebuild it
+whenever `chunks.jsonl` or the embedding model changes; opening an index built
+with a different model raises an error.
+
+```python
+from src.indexing.vector_store import VectorStore
+
+store = VectorStore()
+store.search("Which YOLO version performed best?", domain="healthcare", top_k=5)
+store.get_context("93c4d3a53ca1", chunk_index=18, window=1)  # neighbours, overlap removed
+```

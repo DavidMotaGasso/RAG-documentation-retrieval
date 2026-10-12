@@ -71,6 +71,15 @@ No sub-domains or extra per-document tags (task/modality) for now.
   `body` sections are indexed (front matter, back matter and references are
   excluded). Indexable corpus: ~129k tokens -> ~600 chunks. Revisit size (e.g.
   400) in Phase 5 using evals.
+- **Vector index** (Phase 1, `src/indexing/`): one Chroma collection
+  (`chunks`, 585 entries) with metadata filters on `domain` / `doc_id`; cosine
+  distance; embeddings computed by our `Embedder` and passed explicitly
+  (collection created with `embedding_function=None`, otherwise Chroma silently
+  uses its default MiniLM); the embedding model name is stored on the
+  collection and checked on open. Stored `document` = chunk `text` (no header).
+  bge's query instruction is **off** by default (equal or slightly worse in the
+  Phase 1.5 check; re-test in Phase 4). Document cards stay in
+  `data/processed/document_cards.json` (no vectors; 12 cards are read whole).
 - **LLM model**: start with `claude-haiku-4-5` for cost efficiency (same choice
   made in `football-predictor`). Reassess if answer quality is insufficient
   during evals — possibly upgrade only the final-generation step.
@@ -106,8 +115,9 @@ rag-practice/
 │   │   ├── document_cards.py     # one Haiku-generated card per paper (for list_documents)
 │   │   └── domains.py            # domain taxonomy + manual doc -> domain map
 │   ├── indexing/
-│   │   ├── embeddings.py         # sentence-transformers wrapper
-│   │   └── vector_store.py       # Chroma wrapper (index + metadata filters)
+│   │   ├── embeddings.py         # bge-small wrapper (documents vs. queries, normalized)
+│   │   ├── vector_store.py       # Chroma: build index, search with filters, get_context
+│   │   └── retrieval_check.py    # Phase 1.5 sanity check on 20 hand-labeled queries
 │   ├── agent/
 │   │   ├── tools.py              # tool definitions for the Claude Agent SDK
 │   │   └── agent.py              # agent setup, system prompt
@@ -139,6 +149,22 @@ Notes from Phase 0:
 - Candidate additions for within-domain routing: `list_documents(domain)`
   (returns document cards) and an optional `doc_id` filter on
   `search_by_domain`. Decide in Phase 3, validate in Phase 4.
+
+Notes from Phase 1 (retrieval check, `src/indexing/retrieval_check.py`):
+- **Similarity scores cannot detect out-of-corpus questions**: best in-corpus
+  top-1 score 0.669–0.706 vs. out-of-corpus up to 0.719. No threshold works;
+  the agent must read the retrieved chunks and judge relevance itself (state
+  this in the system prompt).
+- The review paper `36ecde91c4ff` attracts generic ML questions (LSTM, BERT
+  queries returned 5/5 chunks from it). Watch for this in evals.
+- Bare identifiers retrieve poorly ("Results on the LOTUS benchmark" misses;
+  "lung tumor segmentation on the LOTUS dataset" ranks the right paper first).
+  The agent should write descriptive search queries, not bare names. The same
+  model is spelled `ResNet-50` and `ResNet50` across papers (matters for BM25).
+- Top-5 results tend to come from a single paper; fine for single-paper
+  questions, a risk for multi-paper ones.
+- `VectorStore.search` / `get_context` are the building blocks for
+  `search_by_domain`, `search_global` and `get_chunk_context`.
 
 No reranking tool in this first version — revisit in the improvement phase once
 baseline evals show whether it's worth the added cost.

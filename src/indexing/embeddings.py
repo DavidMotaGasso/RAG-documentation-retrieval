@@ -16,14 +16,15 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 
 MODEL_NAME = "BAAI/bge-small-en-v1.5"
-# Recommended by the bge authors for short-query -> passage retrieval.
-# Its effect on this corpus is checked in Phase 1.5.
+# Suggested by the bge authors for short-query -> passage retrieval, but
+# optional for v1.5. Off by default: in the Phase 1.5 check it was equal or
+# slightly worse (hit@5 0.94 vs 1.00 on 17 queries). Re-test in Phase 4.
 QUERY_INSTRUCTION = "Represent this sentence for searching relevant passages: "
 BATCH_SIZE = 32
 
 
 class Embedder:
-    def __init__(self, model_name: str = MODEL_NAME, use_query_instruction: bool = True):
+    def __init__(self, model_name: str = MODEL_NAME, use_query_instruction: bool = False):
         self.model_name = model_name
         self.use_query_instruction = use_query_instruction
 
