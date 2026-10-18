@@ -18,51 +18,24 @@ Usage:
 
 import argparse
 import time
-from dataclasses import dataclass, field
 
 import anthropic
 from dotenv import load_dotenv
 
 from src.indexing.vector_store import VectorStore
 from src.ingestion.inventory import PROJECT_ROOT
+from src.rag_answer import EFFORT, MODEL, RAGAnswer
 
-MODEL = "claude-haiku-5-5"
-# Rate card for prompts up to 100K tokens ($0.50 / $2.50 above); ours are ~2K.
-PRICE_PER_MTOK = {"input": 0.10, "output": 0.50}
 TOP_K = 5
 # Haiku 5.5 thinks by default and thinking counts toward max_tokens, so leave
-# room above the ~300-token answers. Low effort: answering from 5 given
-# excerpts needs little reasoning.
+# room above the ~300-token answers.
 MAX_TOKENS = 4000
-EFFORT = "low"
 
 SYSTEM_PROMPT = """You answer questions about a collection of research papers.
 Use only the numbered excerpts provided with the question; do not add outside knowledge.
 Cite the excerpts you use as [1], [2], ...
 If the excerpts do not contain the answer, say that the documents do not cover it
 instead of guessing. Answer in the language of the question."""
-
-
-@dataclass
-class RAGAnswer:
-    question: str
-    answer: str
-    retrieved: list[dict]               # chunk_id, doc_id, score, in rank order
-    input_tokens: int
-    output_tokens: int
-    latency_s: float
-    llm_calls: int = 1
-    meta: dict = field(default_factory=dict)
-
-    @property
-    def cost_usd(self) -> float:
-        return (self.input_tokens * PRICE_PER_MTOK["input"]
-                + self.output_tokens * PRICE_PER_MTOK["output"]) / 1_000_000
-
-    @property
-    def retrieved_doc_ids(self) -> list[str]:
-        """Distinct documents in rank order (what Phase 4 checks against)."""
-        return list(dict.fromkeys(h["doc_id"] for h in self.retrieved))
 
 
 def format_context(hits: list[dict]) -> str:
@@ -100,6 +73,8 @@ class NaiveRAG:
                        for h in hits],
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
+            cache_write_tokens=response.usage.cache_creation_input_tokens or 0,
+            cache_read_tokens=response.usage.cache_read_input_tokens or 0,
             latency_s=round(time.perf_counter() - start, 2),
             meta={"stop_reason": response.stop_reason},
         )

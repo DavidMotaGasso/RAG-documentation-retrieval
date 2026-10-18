@@ -126,26 +126,69 @@ rag-practice/
 │   ├── baseline/
 │   │   └── naive_rag.py          # Phase 2: global top-5 search + one Haiku call
 │   ├── agent/
-│   │   ├── tools.py              # tool definitions for the Claude Agent SDK
-│   │   └── agent.py              # agent setup, system prompt
+│   │   ├── tools.py              # search / list_documents / get_chunk_context + trace (RAGTools)
+│   │   └── agent.py              # RAGAgent: Agent SDK setup, system prompt, answer() -> RAGAnswer
 │   ├── evals/
 │   │   ├── generate_testset.py   # synthetic Q&A generation
 │   │   ├── metrics.py            # evaluation metrics (e.g. via RAGAS)
 │   │   └── run_evals.py
+│   ├── rag_answer.py             # RAGAnswer result contract + shared LLM settings (model, effort, prices)
 │   └── main.py                   # CLI entry point
 ├── chroma_db/                    # persisted vector index (gitignored)
 ├── requirements.txt
 └── README.md
 ```
 
-## Agent tools (draft)
+## Agent tools (decided in Phase 3.1)
 
 | Tool | Purpose | When the agent calls it |
 |---|---|---|
-| `list_domains()` | Returns available domains in the corpus with a short descriptor each | At session start, or when unsure which domain a query belongs to |
-| `search_by_domain(query, domain, top_k)` | Semantic search in Chroma filtered by `domain` metadata | When the query clearly points to one domain — the "cheap" path |
-| `search_global(query, top_k)` | Semantic search across the whole corpus, no filter | Fallback for ambiguous or cross-domain queries |
-| `get_chunk_context(doc_id, chunk_id)` | Returns neighboring chunks of a given result | When a retrieved chunk seems incomplete |
+| `search(query, domain, doc_id?, top_k?)` | Semantic search. `domain` is **required**: `healthcare`, `remote_sensing`, `ai_security` or `all` (= global search). Optional `doc_id` restricts it to one paper. `top_k` default 5, max 10 | Every retrieval; one call per domain for cross-domain questions, `all` only when the domain is unclear |
+| `list_documents(domain)` | Compact document cards: `doc_id`, title, task, methods, datasets, distinguishing features (~1.5k tokens for healthcare, ~2.7k for `all`) | When the question targets a specific paper among similar ones, or spans several papers, before a `doc_id`-filtered search |
+| `get_chunk_context(chunk_id, window?)` | A chunk plus its neighbours, overlap removed | When a retrieved chunk seems cut off |
+
+Phase 3.1 design decisions:
+- One `search` tool with a required `domain` (instead of `search_by_domain` +
+  `search_global`): forces an explicit routing decision on every call, fewer
+  tools for Haiku to choose from; global searches stay visible in traces.
+- `list_domains()` dropped: the 3 domains go in the system prompt.
+- Results show `[chunk_id] title | section | pages` + text, **without
+  similarity scores** (Phase 1: they mislead about relevance); scores are kept
+  in the trace only.
+- Cards omit `key_results`: cards are LLM summaries for *choosing* a paper; the
+  agent must answer from chunks. `methods` is included (it identifies which
+  papers use a technique, e.g. ResNet-50 -> `3d40`, `93c4`, `b85a`).
+- `list_documents` is a hypothesis: ablate it (agent with vs. without) in
+  Phase 4 and drop it if it doesn't help.
+- The agent always runs at least one search, even for apparently
+  out-of-corpus questions; reformulates at most once before "not covered".
+- Max 6 tool calls per question; same model as the baseline (Haiku 5.5,
+  `effort: low`; try `medium` if routing is poor). Stateless: one question per
+  call, no conversation memory (Phase 6).
+- Returns a `RAGAnswer` like the baseline: `retrieved` = every chunk returned
+  by tools (deduplicated, in order), `llm_calls` = model turns,
+  `meta.trace` = tool calls with arguments and returned papers.
+
+Phase 3.2 Agent SDK check (`claude-agent-sdk` 0.2.165, Claude Code CLI 2.1.283):
+- Works with `claude-haiku-5-5`, `effort="low"`, a custom `system_prompt`
+  string and in-process tools (`create_sdk_mcp_server`, tool names
+  `mcp__<server>__<tool>`, listed in `allowed_tools`).
+- Required options to keep it a clean RAG agent: `tools=[]` (no built-in
+  Bash/Read/...), `setting_sources=[]` (don't load CLAUDE.md / user settings),
+  `strict_mcp_config=True`, `cwd` outside the repo, and
+  `env={"ANTHROPIC_API_KEY": ..., "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1",
+  "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}`. Passing the API key makes
+  the CLI bill the API (not the user's claude.ai login); the two flags remove
+  a hidden auxiliary model call (~1.2k in / 0.5k out tokens) seen otherwise.
+- Overhead: ~360 fixed input tokens per turn beyond our own prompt; ~0.7 s
+  process start per question (the very first cold start took ~6 s).
+- The CLI applies prompt caching automatically (writes 1.25x, reads 0.1x), so
+  turn 2+ and consecutive questions read the system prompt + tool definitions
+  from cache. Cost must therefore be computed with cache tokens.
+- Use `ResultMessage.model_usage[model]` / `total_cost_usd` as the source of
+  truth; per-`AssistantMessage` usage is partial (streamed).
+- A 2-turn question (1 search) cost ~$0.0004 and ~3.3 s, comparable to the
+  baseline's ~$0.0004 and 1.5–5 s.
 
 Notes from Phase 0:
 - With only 3 static domains, the domain list + descriptions go directly in the
@@ -153,9 +196,8 @@ Notes from Phase 0:
 - Cross-domain queries should use one `search_by_domain` call per domain rather
   than `search_global`, so a single large domain can't crowd out the top-k.
 - Out-of-corpus queries (e.g. finance) must yield "not covered", not a guess.
-- Candidate additions for within-domain routing: `list_documents(domain)`
-  (returns document cards) and an optional `doc_id` filter on
-  `search_by_domain`. Decide in Phase 3, validate in Phase 4.
+- Within-domain routing: `list_documents(domain)` and the `doc_id` filter on
+  `search` (adopted in Phase 3.1, validate in Phase 4).
 
 Notes from Phase 1 (retrieval check, `src/indexing/retrieval_check.py`):
 - **Similarity scores cannot detect out-of-corpus questions**: best in-corpus
@@ -179,7 +221,8 @@ from the whole corpus go to one `claude-haiku-5-5` call as numbered excerpts.
 It is not a straw man: same index, same model and the same "say it is not
 covered" instruction the agent will have, so Phase 4 isolates the retrieval
 strategy. It returns a `RAGAnswer` (answer, retrieved chunks, tokens, cost,
-latency) — the agent must return the same fields. First trial (5 questions,
+latency; defined in `src/rag_answer.py` with the shared model, effort and
+prices) — the agent returns the same object. First trial (5 questions,
 ~$0.0004 and ~2.5k input tokens each with Haiku 5.5): out-of-corpus correctly
 refused; a Catalan question retrieved mostly the wrong paper (no translation);
 a multi-paper question retrieved 3 papers but the answer only confirmed 2.
